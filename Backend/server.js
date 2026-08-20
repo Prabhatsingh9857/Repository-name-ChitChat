@@ -60,14 +60,6 @@ const server = http.createServer(app);
 
 const PORT = process.env.PORT || 5000;
 
-server.listen(PORT, "0.0.0.0", () => {
-    console.log("========================================");
-    console.log(`🚀 Chit Chat server running on port ${PORT}`);
-    console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
-    console.log("📁 Uploads enabled");
-    console.log("🔌 Socket.IO enabled");
-    console.log("========================================");
-});
 // ========================================
 // FRONTEND URLS
 // ========================================
@@ -2787,6 +2779,11 @@ const startServer =
             // --------------------------------
             // START SERVER
             // --------------------------------
+            //
+            // IMPORTANT:
+            // This is the ONLY server.listen()
+            // in the entire file.
+            //
 
             server.listen(
                 PORT,
