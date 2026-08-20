@@ -15,7 +15,7 @@ import "./App.css";
 // API
 // ========================================
 
-const API_URL = "http://localhost:5000";
+const API_URL = "https://chitchat-backend-dpbp.onrender.com";
 
 // ========================================
 // IMAGE / FILE URL HELPER

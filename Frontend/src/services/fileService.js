@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:5000";
+const API_URL = "http://https://chitchat-backend-dpbp.onrender.com";
 
 // ========================================
 // SEND FILE MESSAGE
