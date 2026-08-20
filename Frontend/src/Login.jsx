@@ -1,6 +1,8 @@
 import { useState } from "react";
 
-const API_URL = "http://https://chitchat-backend-dpbp.onrender.com";
+const API_URL =
+    import.meta.env.VITE_API_URL ||
+    "https://chitchat-backend-dpbp.onrender.com";
 
 function Login({ onLogin, onGoToRegister }) {
     const [email, setEmail] = useState("");
@@ -18,40 +20,49 @@ function Login({ onLogin, onGoToRegister }) {
 
         setError("");
 
-        // ----------------------------
+        // ========================================
         // VALIDATION
-        // ----------------------------
+        // ========================================
 
         if (!email.trim()) {
-            setError("Please enter your email");
+            setError("Please enter your email.");
             return;
         }
 
         if (!password) {
-            setError("Please enter your password");
+            setError("Please enter your password.");
             return;
         }
 
         try {
             setLoading(true);
 
-            console.log("================================");
+            const loginURL =
+                `${API_URL}/api/auth/login`;
+
+            console.log(
+                "================================"
+            );
             console.log("CHIT CHAT LOGIN");
-            console.log("API:", `${API_URL}/api/auth/login`);
+            console.log("Backend URL:", API_URL);
+            console.log("Login URL:", loginURL);
             console.log("Email:", email.trim());
-            console.log("================================");
+            console.log(
+                "================================"
+            );
 
             // ========================================
             // LOGIN REQUEST
             // ========================================
 
             const response = await fetch(
-                `${API_URL}/api/auth/login`,
+                loginURL,
                 {
                     method: "POST",
 
                     headers: {
-                        "Content-Type": "application/json",
+                        "Content-Type":
+                            "application/json",
                     },
 
                     body: JSON.stringify({
@@ -65,7 +76,7 @@ function Login({ onLogin, onGoToRegister }) {
             // READ RESPONSE
             // ========================================
 
-            let data;
+            let data = null;
 
             try {
                 data = await response.json();
@@ -76,7 +87,7 @@ function Login({ onLogin, onGoToRegister }) {
                 );
 
                 setError(
-                    "Server returned an invalid response"
+                    "Server returned an invalid response."
                 );
 
                 return;
@@ -99,7 +110,8 @@ function Login({ onLogin, onGoToRegister }) {
             if (!response.ok) {
                 setError(
                     data?.message ||
-                        "Invalid email or password"
+                        data?.error ||
+                        "Invalid email or password."
                 );
 
                 return;
@@ -116,7 +128,7 @@ function Login({ onLogin, onGoToRegister }) {
                 );
 
                 setError(
-                    "Login failed: authentication token missing"
+                    "Login failed: authentication token is missing."
                 );
 
                 return;
@@ -133,7 +145,7 @@ function Login({ onLogin, onGoToRegister }) {
                 );
 
                 setError(
-                    "Login failed: user information missing"
+                    "Login failed: user information is missing."
                 );
 
                 return;
@@ -158,7 +170,7 @@ function Login({ onLogin, onGoToRegister }) {
             );
 
             console.log(
-                "Login successful"
+                "Login successful."
             );
 
             console.log(
@@ -170,7 +182,10 @@ function Login({ onLogin, onGoToRegister }) {
             // TELL APP LOGIN SUCCEEDED
             // ========================================
 
-            if (typeof onLogin === "function") {
+            if (
+                typeof onLogin ===
+                "function"
+            ) {
                 onLogin(data.user);
             }
         } catch (error) {
@@ -179,9 +194,8 @@ function Login({ onLogin, onGoToRegister }) {
                 error
             );
 
-            // Network / backend unavailable
             setError(
-                "Unable to connect to Chit Chat server. Make sure the backend is running on port 5000."
+                "Unable to connect to Chit Chat server. Please check your internet connection or try again."
             );
         } finally {
             setLoading(false);
@@ -310,8 +324,7 @@ function Login({ onLogin, onGoToRegister }) {
                             value={email}
                             onChange={(e) =>
                                 setEmail(
-                                    e.target
-                                        .value
+                                    e.target.value
                                 )
                             }
                             placeholder="Enter your email"
@@ -363,8 +376,7 @@ function Login({ onLogin, onGoToRegister }) {
                             value={password}
                             onChange={(e) =>
                                 setPassword(
-                                    e.target
-                                        .value
+                                    e.target.value
                                 )
                             }
                             placeholder="Enter your password"

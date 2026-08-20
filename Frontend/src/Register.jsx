@@ -1,6 +1,11 @@
 import { useState } from "react";
 
-const API_URL = "http://https://chitchat-backend-dpbp.onrender.com";
+// Production backend on Render.
+// VITE_API_URL can be set in Render Environment Variables.
+// The fallback makes the file work even if the variable is not set.
+const API_URL =
+    import.meta.env.VITE_API_URL ||
+    "https://chitchat-backend-dpbp.onrender.com";
 
 function Register({ onRegister, onGoToLogin }) {
     const [username, setUsername] = useState("");
@@ -53,14 +58,15 @@ function Register({ onRegister, onGoToLogin }) {
         try {
             setLoading(true);
 
+            const registerURL =
+                `${API_URL}/api/auth/register`;
+
             console.log(
                 "================================"
             );
             console.log("CHIT CHAT REGISTER");
-            console.log(
-                "URL:",
-                `${API_URL}/api/auth/register`
-            );
+            console.log("Backend URL:", API_URL);
+            console.log("Register URL:", registerURL);
             console.log(
                 "================================"
             );
@@ -70,7 +76,7 @@ function Register({ onRegister, onGoToLogin }) {
             // ========================================
 
             const response = await fetch(
-                `${API_URL}/api/auth/register`,
+                registerURL,
                 {
                     method: "POST",
 
@@ -95,14 +101,14 @@ function Register({ onRegister, onGoToLogin }) {
             // READ RESPONSE
             // ========================================
 
-            let data;
+            let data = null;
 
             try {
                 data = await response.json();
-            } catch (error) {
+            } catch (jsonError) {
                 console.error(
                     "Invalid server response:",
-                    error
+                    jsonError
                 );
 
                 setError(
@@ -129,6 +135,7 @@ function Register({ onRegister, onGoToLogin }) {
             if (!response.ok) {
                 setError(
                     data?.message ||
+                        data?.error ||
                         "Registration failed."
                 );
 
@@ -193,7 +200,7 @@ function Register({ onRegister, onGoToLogin }) {
             );
 
             setError(
-                "Unable to connect to Chit Chat server. Make sure the backend is running on port 5000."
+                "Unable to connect to Chit Chat server. Please check your internet connection or try again."
             );
         } finally {
             setLoading(false);
