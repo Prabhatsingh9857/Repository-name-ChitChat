@@ -51,19 +51,89 @@ const app = express();
 const server = http.createServer(app);
 
 // ========================================
-// FRONTEND URL
+// PORT
+// ========================================
+//
+// Render provides process.env.PORT.
+// Locally it will use 5000 if PORT is not set.
+//
+
+const PORT = process.env.PORT || 5000;
+
+server.listen(PORT, "0.0.0.0", () => {
+    console.log("========================================");
+    console.log(`🚀 Chit Chat server running on port ${PORT}`);
+    console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
+    console.log("📁 Uploads enabled");
+    console.log("🔌 Socket.IO enabled");
+    console.log("========================================");
+});
+// ========================================
+// FRONTEND URLS
+// ========================================
+//
+// Local development:
+// FRONTEND_URL=http://localhost:5174
+//
+// Production:
+// FRONTEND_URL=https://your-frontend-url.onrender.com
+//
+// You can also provide multiple URLs separated by commas.
+//
+
+const frontendUrls = (
+    process.env.FRONTEND_URL ||
+    "http://localhost:5174"
+)
+    .split(",")
+    .map((url) => url.trim())
+    .filter(Boolean);
+
+// ========================================
+// CORS ORIGIN CHECK
 // ========================================
 
-const FRONTEND_URL =
-    "http://localhost:5174";
+const corsOrigin = (
+    origin,
+    callback
+) => {
+    // Allow requests without an Origin header.
+    //
+    // This is useful for:
+    // - Postman
+    // - server-to-server requests
+    // - mobile/native requests
+    //
+
+    if (!origin) {
+        return callback(null, true);
+    }
+
+    if (
+        frontendUrls.includes(origin)
+    ) {
+        return callback(null, true);
+    }
+
+    console.log(
+        "CORS blocked origin:",
+        origin
+    );
+
+    return callback(
+        new Error(
+            "Not allowed by CORS"
+        )
+    );
+};
 
 // ========================================
-// CORS
+// EXPRESS CORS
 // ========================================
 
 app.use(
     cors({
-        origin: FRONTEND_URL,
+        origin: corsOrigin,
 
         credentials: true,
 
@@ -75,6 +145,11 @@ app.use(
             "DELETE",
             "OPTIONS",
         ],
+
+        allowedHeaders: [
+            "Content-Type",
+            "Authorization",
+        ],
     })
 );
 
@@ -82,11 +157,16 @@ app.use(
 // BODY PARSERS
 // ========================================
 
-app.use(express.json());
+app.use(
+    express.json({
+        limit: "10mb",
+    })
+);
 
 app.use(
     express.urlencoded({
         extended: true,
+        limit: "10mb",
     })
 );
 
@@ -148,6 +228,24 @@ app.use(
 );
 
 // ========================================
+// ALSO SERVE /uploads/files
+// ========================================
+//
+// Your message controller creates URLs like:
+//
+// /uploads/files/filename.ext
+//
+// This route makes sure those URLs are served.
+//
+
+app.use(
+    "/uploads/files",
+    express.static(
+        filesDirectory
+    )
+);
+
+// ========================================
 // API ROUTES
 // ========================================
 
@@ -202,11 +300,40 @@ app.get(
                     filename
                 );
 
-            const filePath =
+            let filePath =
                 path.join(
                     filesDirectory,
                     safeFilename
                 );
+
+            // --------------------------------
+            // FALLBACK
+            //
+            // Your current upload middleware
+            // may store some files directly
+            // inside /uploads.
+            // --------------------------------
+
+            if (
+                !fs.existsSync(
+                    filePath
+                )
+            ) {
+                const fallbackPath =
+                    path.join(
+                        uploadsDirectory,
+                        safeFilename
+                    );
+
+                if (
+                    fs.existsSync(
+                        fallbackPath
+                    )
+                ) {
+                    filePath =
+                        fallbackPath;
+                }
+            }
 
             console.log(
                 "Download requested:",
@@ -286,6 +413,31 @@ app.get(
 );
 
 // ========================================
+// HEALTH CHECK
+// ========================================
+
+app.get(
+    "/health",
+    (req, res) => {
+        return res.status(200).json({
+            success: true,
+
+            message:
+                "Chit Chat server is healthy.",
+
+            database:
+                mongoose.connection.readyState ===
+                1
+                    ? "connected"
+                    : "disconnected",
+
+            timestamp:
+                new Date().toISOString(),
+        });
+    }
+);
+
+// ========================================
 // TEST ROUTE
 // ========================================
 
@@ -296,7 +448,7 @@ app.get(
             success: true,
 
             message:
-                "Chit Chat server is running",
+                "Chit Chat server is running.",
         });
     }
 );
@@ -309,11 +461,9 @@ const io = new Server(
     server,
     {
         cors: {
-            origin:
-                FRONTEND_URL,
+            origin: corsOrigin,
 
-            credentials:
-                true,
+            credentials: true,
 
             methods: [
                 "GET",
@@ -321,8 +471,14 @@ const io = new Server(
                 "PUT",
                 "PATCH",
                 "DELETE",
+                "OPTIONS",
             ],
         },
+
+        transports: [
+            "websocket",
+            "polling",
+        ],
     }
 );
 
@@ -427,10 +583,6 @@ const deleteUploadedFile =
         }
 
         try {
-            // --------------------------------
-            // ONLY OUR UPLOADS
-            // --------------------------------
-
             if (
                 !fileUrl.startsWith(
                     "/uploads/"
@@ -453,7 +605,7 @@ const deleteUploadedFile =
             // BUILD ABSOLUTE PATH
             // --------------------------------
 
-            const filePath =
+            let filePath =
                 path.resolve(
                     uploadsDirectory,
                     relativePath
@@ -480,6 +632,45 @@ const deleteUploadedFile =
                 );
 
                 return;
+            }
+
+            // --------------------------------
+            // FALLBACK FOR CURRENT UPLOAD
+            // --------------------------------
+
+            if (
+                !fs.existsSync(
+                    filePath
+                ) &&
+                relativePath.startsWith(
+                    "files" +
+                        path.sep
+                )
+            ) {
+                const fallbackName =
+                    relativePath.replace(
+                        /^files[\\/]/,
+                        ""
+                    );
+
+                const fallbackPath =
+                    path.resolve(
+                        uploadsDirectory,
+                        fallbackName
+                    );
+
+                if (
+                    fallbackPath.startsWith(
+                        uploadsRoot +
+                            path.sep
+                    ) &&
+                    fs.existsSync(
+                        fallbackPath
+                    )
+                ) {
+                    filePath =
+                        fallbackPath;
+                }
             }
 
             // --------------------------------
@@ -525,7 +716,10 @@ const copyUploadedFile =
             return null;
         }
 
-        // External URL
+        // --------------------------------
+        // EXTERNAL URL
+        // --------------------------------
+
         if (
             !fileUrl.startsWith(
                 "/uploads/"
@@ -535,21 +729,13 @@ const copyUploadedFile =
         }
 
         try {
-            // --------------------------------
-            // REMOVE /uploads/
-            // --------------------------------
-
             const relativePath =
                 fileUrl.replace(
                     /^\/uploads[\\/]/,
                     ""
                 );
 
-            // --------------------------------
-            // SOURCE
-            // --------------------------------
-
-            const sourcePath =
+            let sourcePath =
                 path.resolve(
                     uploadsDirectory,
                     relativePath
@@ -570,7 +756,51 @@ const copyUploadedFile =
                         path.sep
                 )
             ) {
+                console.error(
+                    "Blocked unsafe forwarding path:",
+                    sourcePath
+                );
+
                 return null;
+            }
+
+            // --------------------------------
+            // FALLBACK FOR CURRENT UPLOAD
+            // --------------------------------
+
+            if (
+                !fs.existsSync(
+                    sourcePath
+                ) &&
+                relativePath.startsWith(
+                    "files" +
+                        path.sep
+                )
+            ) {
+                const fallbackName =
+                    relativePath.replace(
+                        /^files[\\/]/,
+                        ""
+                    );
+
+                const fallbackPath =
+                    path.resolve(
+                        uploadsDirectory,
+                        fallbackName
+                    );
+
+                if (
+                    fallbackPath.startsWith(
+                        uploadsRoot +
+                            path.sep
+                    ) &&
+                    fs.existsSync(
+                        fallbackPath
+                    )
+                ) {
+                    sourcePath =
+                        fallbackPath;
+                }
             }
 
             // --------------------------------
@@ -612,7 +842,8 @@ const copyUploadedFile =
 
             const newName =
                 `${baseName}-forwarded-${Date.now()}-${Math.round(
-                    Math.random() * 1000000000
+                    Math.random() *
+                        1000000000
                 )}${extension}`;
 
             // --------------------------------
@@ -1085,18 +1316,10 @@ io.on(
                                 null,
                         });
 
-                    // ----------------------------
-                    // LAST MESSAGE
-                    // ----------------------------
-
                     conversation.lastMessage =
                         newMessage._id;
 
                     await conversation.save();
-
-                    // ----------------------------
-                    // POPULATE
-                    // ----------------------------
 
                     let populatedMessage =
                         await populateMessage(
@@ -1106,20 +1329,12 @@ io.on(
                     const room =
                         conversationId.toString();
 
-                    // ----------------------------
-                    // ROOM
-                    // ----------------------------
-
                     io.to(
                         room
                     ).emit(
                         "receiveMessage",
                         populatedMessage
                     );
-
-                    // ----------------------------
-                    // RECIPIENTS
-                    // ----------------------------
 
                     const recipientIds =
                         conversation.participants
@@ -1136,10 +1351,6 @@ io.on(
                                     id !==
                                     socket.userId
                             );
-
-                    // ----------------------------
-                    // DELIVERY
-                    // ----------------------------
 
                     const recipientOnline =
                         recipientIds.some(
@@ -1188,10 +1399,6 @@ io.on(
                         );
                     }
 
-                    // ----------------------------
-                    // NOTIFICATION
-                    // ----------------------------
-
                     recipientIds.forEach(
                         (
                             recipientId
@@ -1203,10 +1410,6 @@ io.on(
                             );
                         }
                     );
-
-                    // ----------------------------
-                    // STOP TYPING
-                    // ----------------------------
 
                     io.to(
                         room
@@ -1306,10 +1509,6 @@ io.on(
                         return;
                     }
 
-                    // ----------------------------
-                    // DELETE MEDIA
-                    // ----------------------------
-
                     if (
                         message.fileUrl
                     ) {
@@ -1326,10 +1525,6 @@ io.on(
                         );
                     }
 
-                    // IMPORTANT:
-                    // AUDIO WAS MISSING BEFORE
-                    // ----------------------------
-
                     if (
                         message.audioUrl
                     ) {
@@ -1337,10 +1532,6 @@ io.on(
                             message.audioUrl
                         );
                     }
-
-                    // ----------------------------
-                    // SOFT DELETE
-                    // ----------------------------
 
                     message.deleted =
                         true;
@@ -1380,10 +1571,6 @@ io.on(
 
                     await message.save();
 
-                    // ----------------------------
-                    // LAST MESSAGE
-                    // ----------------------------
-
                     if (
                         conversation.lastMessage &&
                         conversation.lastMessage.toString() ===
@@ -1413,10 +1600,6 @@ io.on(
 
                         await conversation.save();
                     }
-
-                    // ----------------------------
-                    // SOCKET
-                    // ----------------------------
 
                     io.to(
                         conversationId.toString()
@@ -1783,10 +1966,6 @@ io.on(
                         return;
                     }
 
-                    // ----------------------------
-                    // ORIGINAL
-                    // ----------------------------
-
                     const originalMessage =
                         await Message.findById(
                             messageId
@@ -1803,10 +1982,6 @@ io.on(
                     ) {
                         return;
                     }
-
-                    // ----------------------------
-                    // SOURCE
-                    // ----------------------------
 
                     const sourceConversation =
                         await Conversation.findById(
@@ -1828,10 +2003,6 @@ io.on(
                         return;
                     }
 
-                    // ----------------------------
-                    // TARGET
-                    // ----------------------------
-
                     const targetConversation =
                         await Conversation.findById(
                             targetConversationId
@@ -1852,9 +2023,9 @@ io.on(
                         return;
                     }
 
-                    // ----------------------------
+                    // --------------------------------
                     // IMAGE
-                    // ----------------------------
+                    // --------------------------------
 
                     let forwardedImageUrl =
                         originalMessage.imageUrl;
@@ -1874,9 +2045,9 @@ io.on(
                         }
                     }
 
-                    // ----------------------------
+                    // --------------------------------
                     // FILE
-                    // ----------------------------
+                    // --------------------------------
 
                     let forwardedFileUrl =
                         originalMessage.fileUrl;
@@ -1896,9 +2067,9 @@ io.on(
                         }
                     }
 
-                    // ----------------------------
+                    // --------------------------------
                     // AUDIO
-                    // ----------------------------
+                    // --------------------------------
 
                     let forwardedAudioUrl =
                         originalMessage.audioUrl;
@@ -1918,9 +2089,9 @@ io.on(
                         }
                     }
 
-                    // ----------------------------
-                    // CREATE FORWARDED
-                    // ----------------------------
+                    // --------------------------------
+                    // CREATE
+                    // --------------------------------
 
                     const forwardedMessage =
                         await Message.create({
@@ -2001,18 +2172,10 @@ io.on(
                                 null,
                         });
 
-                    // ----------------------------
-                    // LAST MESSAGE
-                    // ----------------------------
-
                     targetConversation.lastMessage =
                         forwardedMessage._id;
 
                     await targetConversation.save();
-
-                    // ----------------------------
-                    // POPULATE
-                    // ----------------------------
 
                     let populatedMessage =
                         await populateMessage(
@@ -2022,20 +2185,12 @@ io.on(
                     const room =
                         targetConversationId.toString();
 
-                    // ----------------------------
-                    // SEND
-                    // ----------------------------
-
                     io.to(
                         room
                     ).emit(
                         "receiveMessage",
                         populatedMessage
                     );
-
-                    // ----------------------------
-                    // RECIPIENTS
-                    // ----------------------------
 
                     const recipientIds =
                         targetConversation.participants
@@ -2052,10 +2207,6 @@ io.on(
                                     id !==
                                     socket.userId
                             );
-
-                    // ----------------------------
-                    // DELIVERY
-                    // ----------------------------
 
                     const recipientOnline =
                         recipientIds.some(
@@ -2104,10 +2255,6 @@ io.on(
                         );
                     }
 
-                    // ----------------------------
-                    // NOTIFICATIONS
-                    // ----------------------------
-
                     recipientIds.forEach(
                         (
                             recipientId
@@ -2119,10 +2266,6 @@ io.on(
                             );
                         }
                     );
-
-                    // ----------------------------
-                    // CONFIRM
-                    // ----------------------------
 
                     socket.emit(
                         "messageForwarded",
@@ -2462,10 +2605,6 @@ app.use(
         res,
         next
     ) => {
-        // --------------------------------
-        // MULTER ERROR
-        // --------------------------------
-
         if (
             error instanceof
             multer.MulterError
@@ -2495,10 +2634,6 @@ app.use(
                     "File upload error.",
             });
         }
-
-        // --------------------------------
-        // CUSTOM UPLOAD ERROR
-        // --------------------------------
 
         if (
             error
@@ -2576,10 +2711,6 @@ app.use(
 // START SERVER
 // ========================================
 
-const PORT =
-    process.env.PORT ||
-    5000;
-
 const startServer =
     async () => {
         try {
@@ -2595,13 +2726,51 @@ const startServer =
                 );
             }
 
+            if (
+                !process.env.JWT_SECRET
+            ) {
+                throw new Error(
+                    "JWT_SECRET is missing from .env"
+                );
+            }
+
             console.log(
-                "Connecting to MongoDB..."
+                "========================================"
+            );
+
+            console.log(
+                "Starting Chit Chat server..."
+            );
+
+            console.log(
+                "Environment:",
+                process.env.NODE_ENV ||
+                    "development"
+            );
+
+            console.log(
+                "Port:",
+                PORT
+            );
+
+            console.log(
+                "Frontend URL:",
+                frontendUrls.join(
+                    ", "
+                )
+            );
+
+            console.log(
+                "========================================"
             );
 
             // --------------------------------
-            // CONNECT
+            // CONNECT MONGODB
             // --------------------------------
+
+            console.log(
+                "Connecting to MongoDB..."
+            );
 
             await mongoose.connect(
                 process.env.MONGO_URI,
@@ -2616,29 +2785,59 @@ const startServer =
             );
 
             // --------------------------------
-            // START
+            // START SERVER
             // --------------------------------
 
             server.listen(
                 PORT,
+                "0.0.0.0",
                 () => {
                     console.log(
-                        `🚀 Chit Chat server running on http://localhost:${PORT}`
+                        "========================================"
                     );
 
                     console.log(
-                        `📁 Uploaded files: http://localhost:${PORT}/uploads`
+                        `🚀 Chit Chat server running on port ${PORT}`
                     );
 
                     console.log(
-                        `📁 Upload directory: ${filesDirectory}`
+                        `🌐 Frontend allowed: ${frontendUrls.join(
+                            ", "
+                        )}`
+                    );
+
+                    console.log(
+                        "📁 Uploads enabled"
+                    );
+
+                    console.log(
+                        "🔌 Socket.IO enabled"
+                    );
+
+                    console.log(
+                        `❤️ Health check: /health`
+                    );
+
+                    console.log(
+                        "========================================"
                     );
                 }
             );
         } catch (error) {
             console.error(
-                "MongoDB connection error:",
+                "========================================"
+            );
+
+            console.error(
+                "MongoDB/server startup error:"
+            );
+
+            console.error(
                 error.message
+            );
+
+            console.error(
+                "========================================"
             );
 
             process.exit(
@@ -2646,6 +2845,60 @@ const startServer =
             );
         }
     };
+
+// ========================================
+// GRACEFUL SHUTDOWN
+// ========================================
+
+const shutdown =
+    async (
+        signal
+    ) => {
+        console.log(
+            `\n${signal} received. Shutting down...`
+        );
+
+        try {
+            await mongoose.connection.close();
+
+            server.close(
+                () => {
+                    console.log(
+                        "Server closed."
+                    );
+
+                    process.exit(
+                        0
+                    );
+                }
+            );
+        } catch (error) {
+            console.error(
+                "Shutdown error:",
+                error
+            );
+
+            process.exit(
+                1
+            );
+        }
+    };
+
+process.on(
+    "SIGTERM",
+    () =>
+        shutdown(
+            "SIGTERM"
+        )
+);
+
+process.on(
+    "SIGINT",
+    () =>
+        shutdown(
+            "SIGINT"
+        )
+);
 
 // ========================================
 // RUN APPLICATION
