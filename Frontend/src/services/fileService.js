@@ -1,4 +1,5 @@
-const API_URL = "http://https://chitchat-backend-dpbp.onrender.com";
+const API_URL =
+    "https://chitchat-backend-dpbp.onrender.com";
 
 // ========================================
 // SEND FILE MESSAGE
@@ -25,9 +26,9 @@ export const sendFileMessage = async (
         );
     }
 
-    // ====================================
+    // ========================================
     // CREATE FORM DATA
-    // ====================================
+    // ========================================
 
     const formData = new FormData();
 
@@ -41,9 +42,9 @@ export const sendFileMessage = async (
         file
     );
 
-    // ====================================
-    // SEND TO BACKEND
-    // ====================================
+    // ========================================
+    // SEND FILE TO BACKEND
+    // ========================================
 
     const response = await fetch(
         `${API_URL}/api/messages/file`,
@@ -58,34 +59,65 @@ export const sendFileMessage = async (
         }
     );
 
-    // ====================================
-    // READ RESPONSE
-    // ====================================
+    // ========================================
+    // READ SERVER RESPONSE
+    // ========================================
 
     let data;
 
     try {
         data = await response.json();
     } catch (error) {
+        console.error(
+            "Invalid server response:",
+            error
+        );
+
         throw new Error(
             "Server returned an invalid response."
         );
     }
 
-    // ====================================
-    // HANDLE ERROR
-    // ====================================
+    // ========================================
+    // HANDLE SERVER ERROR
+    // ========================================
 
     if (!response.ok) {
+        console.error(
+            "File upload failed:",
+            data
+        );
+
         throw new Error(
-            data.message ||
+            data?.message ||
+                data?.error ||
                 "Failed to send file."
         );
     }
 
-    // ====================================
+    // ========================================
+    // CHECK RESPONSE DATA
+    // ========================================
+
+    if (!data?.data) {
+        console.error(
+            "File uploaded but message data is missing:",
+            data
+        );
+
+        throw new Error(
+            "File uploaded, but message information was not returned."
+        );
+    }
+
+    // ========================================
     // RETURN MESSAGE
-    // ====================================
+    // ========================================
+
+    console.log(
+        "File message created successfully:",
+        data.data
+    );
 
     return data.data;
 };

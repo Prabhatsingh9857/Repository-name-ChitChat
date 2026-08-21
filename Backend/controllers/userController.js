@@ -60,7 +60,6 @@ const searchUsers = async (req, res) => {
                         $options: "i",
                     },
                 },
-
                 {
                     email: {
                         $regex: search.trim(),
@@ -85,7 +84,7 @@ const searchUsers = async (req, res) => {
 
         return res.status(500).json({
             message:
-                "Server error while searching users",
+                "Server error while searching users.",
         });
     }
 };
@@ -105,7 +104,7 @@ const getProfile = async (req, res) => {
 
         if (!user) {
             return res.status(404).json({
-                message: "User not found",
+                message: "User not found.",
             });
         }
 
@@ -120,7 +119,7 @@ const getProfile = async (req, res) => {
 
         return res.status(500).json({
             message:
-                "Server error while getting profile",
+                "Server error while getting profile.",
         });
     }
 };
@@ -234,22 +233,14 @@ const updateProfile = async (req, res) => {
         }
 
         // ====================================
-        // UPDATE USERNAME
+        // UPDATE
         // ====================================
 
         user.username =
             newUsername;
 
-        // ====================================
-        // UPDATE BIO
-        // ====================================
-
         user.bio =
             newBio;
-
-        // ====================================
-        // SAVE
-        // ====================================
 
         await user.save();
 
@@ -263,7 +254,7 @@ const updateProfile = async (req, res) => {
             ).select("-password");
 
         // ====================================
-        // REAL-TIME PROFILE UPDATE
+        // SOCKET UPDATE
         // ====================================
 
         emitProfileUpdate(
@@ -342,6 +333,45 @@ const uploadProfilePicture = async (
     try {
         const userId = req.userId;
 
+        console.log(
+            "========================================"
+        );
+
+        console.log(
+            "PROFILE PICTURE UPLOAD"
+        );
+
+        console.log(
+            "User ID:",
+            userId
+        );
+
+        if (req.file) {
+            console.log(
+                "Original name:",
+                req.file.originalname
+            );
+
+            console.log(
+                "Filename:",
+                req.file.filename
+            );
+
+            console.log(
+                "MIME type:",
+                req.file.mimetype
+            );
+
+            console.log(
+                "Saved path:",
+                req.file.path
+            );
+        }
+
+        console.log(
+            "========================================"
+        );
+
         // ====================================
         // CHECK FILE
         // ====================================
@@ -354,6 +384,33 @@ const uploadProfilePicture = async (
         }
 
         // ====================================
+        // CHECK IMAGE
+        // ====================================
+
+        if (
+            !req.file.mimetype ||
+            !req.file.mimetype.startsWith(
+                "image/"
+            )
+        ) {
+            if (
+                req.file.path &&
+                fs.existsSync(
+                    req.file.path
+                )
+            ) {
+                fs.unlinkSync(
+                    req.file.path
+                );
+            }
+
+            return res.status(400).json({
+                message:
+                    "Only image files are allowed.",
+            });
+        }
+
+        // ====================================
         // FIND USER
         // ====================================
 
@@ -361,10 +418,14 @@ const uploadProfilePicture = async (
             await User.findById(userId);
 
         if (!user) {
-            if (req.file.path) {
-                fs.unlink(
-                    req.file.path,
-                    () => {}
+            if (
+                req.file.path &&
+                fs.existsSync(
+                    req.file.path
+                )
+            ) {
+                fs.unlinkSync(
+                    req.file.path
                 );
             }
 
@@ -380,48 +441,88 @@ const uploadProfilePicture = async (
 
         if (
             user.profilePicture &&
-            user.profilePicture.startsWith(
+            user.profilePicture.includes(
                 "/uploads/"
             )
         ) {
-            const oldFilename =
-                path.basename(
-                    user.profilePicture
-                );
+            try {
+                const oldFilename =
+                    path.basename(
+                        user.profilePicture
+                    );
 
-            const oldFilePath =
-                path.join(
-                    __dirname,
-                    "../uploads",
-                    oldFilename
-                );
+                const oldFilePath =
+                    path.join(
+                        __dirname,
+                        "../uploads/files",
+                        oldFilename
+                    );
 
-            if (
-                fs.existsSync(
+                console.log(
+                    "Old profile picture:",
                     oldFilePath
-                )
-            ) {
-                try {
+                );
+
+                if (
+                    fs.existsSync(
+                        oldFilePath
+                    )
+                ) {
                     fs.unlinkSync(
                         oldFilePath
                     );
-                } catch (deleteError) {
-                    console.error(
-                        "Could not delete old profile picture:",
-                        deleteError
+
+                    console.log(
+                        "Old profile picture deleted."
                     );
                 }
+            } catch (deleteError) {
+                console.error(
+                    "Could not delete old profile picture:",
+                    deleteError
+                );
             }
         }
 
         // ====================================
-        // SAVE NEW PROFILE PICTURE
+        // VERIFY NEW FILE EXISTS
+        // ====================================
+
+        if (
+            !req.file.path ||
+            !fs.existsSync(
+                req.file.path
+            )
+        ) {
+            return res.status(500).json({
+                message:
+                    "Uploaded image could not be found on the server.",
+            });
+        }
+
+        // ====================================
+        // SAVE PROFILE PICTURE URL
+        // ====================================
+        //
+        // Multer saves files here:
+        //
+        // Backend/uploads/files/
+        //
+        // Therefore the public URL is:
+        //
+        // /uploads/files/filename
+        //
         // ====================================
 
         user.profilePicture =
-            `/uploads/${req.file.filename}`;
+            `/uploads/files/${req.file.filename}`;
 
         await user.save();
+
+        console.log(
+            "Profile picture saved:",
+            user.profilePicture
+        );
 
         // ====================================
         // GET UPDATED USER
@@ -433,7 +534,7 @@ const uploadProfilePicture = async (
             ).select("-password");
 
         // ====================================
-        // REAL-TIME PROFILE UPDATE
+        // SOCKET UPDATE
         // ====================================
 
         emitProfileUpdate(
@@ -452,11 +553,23 @@ const uploadProfilePicture = async (
                 "Profile picture updated successfully.",
 
             user: updatedUser,
+
+            profilePicture:
+                updatedUser.profilePicture,
         });
     } catch (error) {
         console.error(
-            "Upload profile picture error:",
-            error
+            "========================================"
+        );
+
+        console.error(
+            "UPLOAD PROFILE PICTURE ERROR:"
+        );
+
+        console.error(error);
+
+        console.error(
+            "========================================"
         );
 
         // ====================================
@@ -476,7 +589,7 @@ const uploadProfilePicture = async (
                 }
             } catch (deleteError) {
                 console.error(
-                    "Could not delete uploaded file:",
+                    "Could not delete failed upload:",
                     deleteError
                 );
             }
@@ -505,7 +618,7 @@ const getUserById = async (req, res) => {
         if (!user) {
             return res.status(404).json({
                 message:
-                    "User not found",
+                    "User not found.",
             });
         }
 
@@ -520,7 +633,7 @@ const getUserById = async (req, res) => {
 
         return res.status(500).json({
             message:
-                "Server error while getting user",
+                "Server error while getting user.",
         });
     }
 };

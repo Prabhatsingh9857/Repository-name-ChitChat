@@ -40,6 +40,21 @@ const getFileUrl = (filePath) => {
         return filePath;
     }
 
+    // Current uploads are stored in /uploads/files/.
+    // Also support older profile-picture values saved as /uploads/file.ext.
+    if (filePath.startsWith("/uploads/")) {
+        const relativePath = filePath.replace(/^\/uploads\//, "");
+
+        if (
+            !relativePath.startsWith("files/") &&
+            !relativePath.startsWith("files\\")
+        ) {
+            return `${API_URL}/uploads/files/${relativePath}`;
+        }
+
+        return `${API_URL}${filePath}`;
+    }
+
     if (filePath.startsWith("/")) {
         return `${API_URL}${filePath}`;
     }
@@ -4025,13 +4040,6 @@ function App() {
                 }
 
                 saveUser(updatedUser);
-
-                if (socket.connected) {
-                    socket.emit(
-                        "profileUpdated",
-                        updatedUser
-                    );
-                }
 
                 setProfileUsername(
                     updatedUser.username ||
