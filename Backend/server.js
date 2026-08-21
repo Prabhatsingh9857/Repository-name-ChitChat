@@ -53,59 +53,114 @@ const server = http.createServer(app);
 // ========================================
 // PORT
 // ========================================
-//
-// Render provides process.env.PORT.
-// Locally it will use 5000 if PORT is not set.
-//
 
 const PORT = process.env.PORT || 5000;
 
 // ========================================
 // FRONTEND URLS
 // ========================================
-//
-// Local development:
-// FRONTEND_URL=http://localhost:5174
-//
-// Production:
-// FRONTEND_URL=https://your-frontend-url.onrender.com
-//
-// You can also provide multiple URLs separated by commas.
-//
 
-const frontendUrls = (
-    process.env.FRONTEND_URL ||
-    "http://localhost:5174"
-)
-    .split(",")
-    .map((url) => url.trim())
-    .filter(Boolean);
+const defaultFrontendUrls = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "https://chitchat-frontend-vr5y.onrender.com",
+];
+
+// ========================================
+// BUILD FRONTEND URL LIST
+// ========================================
+
+const environmentFrontendUrls =
+    process.env.FRONTEND_URL
+        ? process.env.FRONTEND_URL
+              .split(",")
+              .map((url) => url.trim())
+              .filter(Boolean)
+        : [];
+
+const frontendUrls = [
+    ...defaultFrontendUrls,
+    ...environmentFrontendUrls,
+].filter(
+    (url, index, array) =>
+        array.indexOf(url) === index
+);
 
 // ========================================
 // CORS ORIGIN CHECK
 // ========================================
 
-const corsOrigin = (
-    origin,
-    callback
-) => {
-    // Allow requests without an Origin header.
+const corsOrigin = (origin, callback) => {
+    // ------------------------------------
+    // Requests without Origin
+    // ------------------------------------
     //
-    // This is useful for:
+    // Allows:
     // - Postman
     // - server-to-server requests
-    // - mobile/native requests
+    // - some mobile/native requests
     //
 
     if (!origin) {
         return callback(null, true);
     }
 
+    // ------------------------------------
+    // LOCALHOST
+    // ------------------------------------
+
+    if (
+        origin === "http://localhost:5173" ||
+        origin === "http://localhost:5174" ||
+        origin.startsWith("http://localhost:")
+    ) {
+        return callback(null, true);
+    }
+
+    // ------------------------------------
+    // PRODUCTION FRONTEND
+    // ------------------------------------
+
+    if (
+        origin ===
+        "https://chitchat-frontend-vr5y.onrender.com"
+    ) {
+        return callback(null, true);
+    }
+
+    // ------------------------------------
+    // FRONTEND_URL FROM RENDER
+    // ------------------------------------
+
+    if (
+        process.env.FRONTEND_URL
+    ) {
+        const allowedUrls =
+            process.env.FRONTEND_URL
+                .split(",")
+                .map((url) => url.trim())
+                .filter(Boolean);
+
+        if (
+            allowedUrls.includes(origin)
+        ) {
+            return callback(null, true);
+        }
+    }
+
+    // ------------------------------------
+    // CHECK DEFAULT URL LIST
+    // ------------------------------------
+
     if (
         frontendUrls.includes(origin)
     ) {
         return callback(null, true);
     }
+
+    // ------------------------------------
+    // BLOCK UNKNOWN ORIGIN
+    // ------------------------------------
 
     console.log(
         "CORS blocked origin:",
@@ -114,36 +169,42 @@ const corsOrigin = (
 
     return callback(
         new Error(
-            "Not allowed by CORS"
+            `Not allowed by CORS: ${origin}`
         )
     );
+};
+
+// ========================================
+// CORS OPTIONS
+// ========================================
+
+const corsOptions = {
+    origin: corsOrigin,
+
+    credentials: true,
+
+    methods: [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+    ],
+
+    allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+    ],
+
+    optionsSuccessStatus: 204,
 };
 
 // ========================================
 // EXPRESS CORS
 // ========================================
 
-app.use(
-    cors({
-        origin: corsOrigin,
-
-        credentials: true,
-
-        methods: [
-            "GET",
-            "POST",
-            "PUT",
-            "PATCH",
-            "DELETE",
-            "OPTIONS",
-        ],
-
-        allowedHeaders: [
-            "Content-Type",
-            "Authorization",
-        ],
-    })
-);
+app.use(cors(corsOptions));
 
 // ========================================
 // BODY PARSERS
@@ -166,17 +227,15 @@ app.use(
 // UPLOAD DIRECTORIES
 // ========================================
 
-const uploadsDirectory =
-    path.join(
-        __dirname,
-        "uploads"
-    );
+const uploadsDirectory = path.join(
+    __dirname,
+    "uploads"
+);
 
-const filesDirectory =
-    path.join(
-        uploadsDirectory,
-        "files"
-    );
+const filesDirectory = path.join(
+    uploadsDirectory,
+    "files"
+);
 
 // ========================================
 // CREATE UPLOAD DIRECTORIES
@@ -222,13 +281,6 @@ app.use(
 // ========================================
 // ALSO SERVE /uploads/files
 // ========================================
-//
-// Your message controller creates URLs like:
-//
-// /uploads/files/filename.ext
-//
-// This route makes sure those URLs are served.
-//
 
 app.use(
     "/uploads/files",
@@ -277,7 +329,6 @@ app.get(
             if (!filename) {
                 return res.status(400).json({
                     success: false,
-
                     message:
                         "Filename is required.",
                 });
@@ -300,10 +351,6 @@ app.get(
 
             // --------------------------------
             // FALLBACK
-            //
-            // Your current upload middleware
-            // may store some files directly
-            // inside /uploads.
             // --------------------------------
 
             if (
@@ -348,7 +395,6 @@ app.get(
             ) {
                 return res.status(404).json({
                     success: false,
-
                     message:
                         "File not found.",
                 });
@@ -376,7 +422,6 @@ app.get(
                                 .json({
                                     success:
                                         false,
-
                                     message:
                                         "Unable to download file.",
                                 });
@@ -395,7 +440,6 @@ app.get(
             ) {
                 return res.status(500).json({
                     success: false,
-
                     message:
                         "Server error while downloading file.",
                 });
@@ -418,8 +462,8 @@ app.get(
                 "Chit Chat server is healthy.",
 
             database:
-                mongoose.connection.readyState ===
-                1
+                mongoose.connection
+                    .readyState === 1
                     ? "connected"
                     : "disconnected",
 
@@ -485,9 +529,10 @@ app.set(
 
 // ========================================
 // ONLINE USERS
+// ========================================
 //
 // userId -> Set(socketId)
-// ========================================
+//
 
 const onlineUsers =
     new Map();
@@ -583,19 +628,11 @@ const deleteUploadedFile =
                 return;
             }
 
-            // --------------------------------
-            // REMOVE /uploads/
-            // --------------------------------
-
             const relativePath =
                 fileUrl.replace(
                     /^\/uploads[\\/]/,
                     ""
                 );
-
-            // --------------------------------
-            // BUILD ABSOLUTE PATH
-            // --------------------------------
 
             let filePath =
                 path.resolve(
@@ -627,7 +664,7 @@ const deleteUploadedFile =
             }
 
             // --------------------------------
-            // FALLBACK FOR CURRENT UPLOAD
+            // FALLBACK
             // --------------------------------
 
             if (
@@ -708,10 +745,6 @@ const copyUploadedFile =
             return null;
         }
 
-        // --------------------------------
-        // EXTERNAL URL
-        // --------------------------------
-
         if (
             !fileUrl.startsWith(
                 "/uploads/"
@@ -757,7 +790,7 @@ const copyUploadedFile =
             }
 
             // --------------------------------
-            // FALLBACK FOR CURRENT UPLOAD
+            // FALLBACK
             // --------------------------------
 
             if (
@@ -795,10 +828,6 @@ const copyUploadedFile =
                 }
             }
 
-            // --------------------------------
-            // CHECK
-            // --------------------------------
-
             if (
                 !fs.existsSync(
                     sourcePath
@@ -811,10 +840,6 @@ const copyUploadedFile =
 
                 return null;
             }
-
-            // --------------------------------
-            // CREATE NEW NAME
-            // --------------------------------
 
             const originalName =
                 path.basename(
@@ -838,19 +863,11 @@ const copyUploadedFile =
                         1000000000
                 )}${extension}`;
 
-            // --------------------------------
-            // DESTINATION
-            // --------------------------------
-
             const destinationPath =
                 path.join(
                     filesDirectory,
                     newName
                 );
-
-            // --------------------------------
-            // COPY
-            // --------------------------------
 
             fs.copyFileSync(
                 sourcePath,
@@ -933,9 +950,7 @@ io.on(
                 userId
             ) => {
                 try {
-                    if (
-                        !userId
-                    ) {
+                    if (!userId) {
                         return;
                     }
 
@@ -1158,8 +1173,7 @@ io.on(
             async ({
                 conversationId,
                 message,
-                replyTo =
-                    null,
+                replyTo = null,
             } = {}) => {
                 try {
                     if (
@@ -2530,10 +2544,6 @@ io.on(
                         socket.id
                     );
 
-                    // --------------------------------
-                    // ONLY OFFLINE WHEN NO SOCKETS
-                    // --------------------------------
-
                     if (
                         sockets.size ===
                         0
@@ -2640,7 +2650,7 @@ app.use(
 
                 message:
                     error.message ||
-                    "Unable to upload file.",
+                    "Unable to process request.",
             });
         }
 
@@ -2707,14 +2717,14 @@ const startServer =
     async () => {
         try {
             // --------------------------------
-            // CHECK MONGO URI
+            // CHECK ENVIRONMENT VARIABLES
             // --------------------------------
 
             if (
                 !process.env.MONGO_URI
             ) {
                 throw new Error(
-                    "MONGO_URI is missing from .env"
+                    "MONGO_URI is missing from environment variables."
                 );
             }
 
@@ -2722,7 +2732,7 @@ const startServer =
                 !process.env.JWT_SECRET
             ) {
                 throw new Error(
-                    "JWT_SECRET is missing from .env"
+                    "JWT_SECRET is missing from environment variables."
                 );
             }
 
@@ -2746,7 +2756,7 @@ const startServer =
             );
 
             console.log(
-                "Frontend URL:",
+                "Frontend allowed:",
                 frontendUrls.join(
                     ", "
                 )
@@ -2757,7 +2767,7 @@ const startServer =
             );
 
             // --------------------------------
-            // CONNECT MONGODB
+            // CONNECT TO MONGODB
             // --------------------------------
 
             console.log(
@@ -2777,12 +2787,11 @@ const startServer =
             );
 
             // --------------------------------
-            // START SERVER
+            // START HTTP SERVER
             // --------------------------------
             //
             // IMPORTANT:
-            // This is the ONLY server.listen()
-            // in the entire file.
+            // ONLY ONE server.listen()
             //
 
             server.listen(
@@ -2812,7 +2821,7 @@ const startServer =
                     );
 
                     console.log(
-                        `❤️ Health check: /health`
+                        "❤️ Health check: /health"
                     );
 
                     console.log(
